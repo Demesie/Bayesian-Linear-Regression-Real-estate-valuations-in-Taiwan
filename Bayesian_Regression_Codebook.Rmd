@@ -1,0 +1,631 @@
+---
+title: "Bayesian Regression: Price of house per unit area Evaluation in Taiwan"
+author: "Yitbarek Demesie"
+output:
+  html_document:
+    theme: cerulean
+    code_folding: show
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+
+```{r, include=FALSE}
+library(ggpubr)
+library(readxl)
+library(ggplot2)
+library(knitr)
+# Allows us to run MCMC
+library(rstanarm)
+# Allows us to make pretty pictures with our MCMC draws
+library(bayesplot)
+library(broom.mixed)
+
+
+library(ggpubr)
+library(dplyr)
+
+library(ggplot2)
+library(knitr)
+# Allows us to run MCMC
+library(rstanarm)
+# Allows us to make pretty pictures with our MCMC draws
+library(bayesplot)
+library(broom.mixed)
+
+
+# Load packages
+library(bayesrules)
+library(tidyverse)
+library(bayesplot)
+library(rstanarm)
+
+```
+
+```{r}
+
+# https://archive.ics.uci.edu/ml/datasets/Real+estate+valuation+data+set
+df <- read_excel("C:\\Users\\yitba\\Documents\\Applied Baysian Statistics\\Final Project\\Real_estate_valuation_data_set.xlsx")
+
+# rename the columns in a sensible manner
+df <- rename(df,House_Number = No, Price = "Y house price of unit area", age = "X2 house age", N_CStores = "X4 number of convenience stores" ,dMRT = "X3 distance to the nearest MRT station" , date = "X1 transaction date", lat ="X5 latitude", lon = "X6 longitude" )
+
+
+```
+
+
+
+
+## Abstract or Executive Summary
+
+The goal of the project is to build a Bayesian linear regression predictive model that is able to predict price of real estate valuations properties in Taiwan. The unit of measurement for price of real estate valuations per unit area is given by  0000 New Taiwan Dollar/Ping where 1 Ping = $3.3m^2$. The projects aims to predict valuation of a house per unit area after accounting for age of the house(in years), distance to the nearest MRT station (in meter) and number of convenience stores in the living circle on foot (integer). Specifically, we are interested in if increasing any of the explanatory variables leads to the appreciation of the value of the property(both statistically and practically). To measure this, we will be performing one-sided hypothesis testing. Such a model is ideal for investors to determine appropriate valuations for investors interested in buying new properties in the Sindian District, New Taipei City. Additionally, the ability to predict price of real estate valuations per unit area allows renters to make informed decision on whether to hold or sell the property , rent or own a property. This project used 10-fold cross validation technique to measure the predictive accuracy of valuation of properties using weakly informative priors. We used mean absolute error(MAE) to measure model predictive accuracy. Using 10-fold CV estimates of posterior predictive accuracy model we found that the model mean absolute error is 4.90852. This means each of our prediction was with in 4.9 thousands of Taiwan dollar per unit area.  Hence, it tells how far off we are in-terms of predicting valuation of a house per unit area from the true valuation of a house per unit area. This mae  of 4.90852is quite well compared to mae of 10.7 by predicting average price for all observations.  The paper discusses in detail how the results were obtained, prior assumptions and posterior predictive accuracy and hypothesis testing for each of estimates in increasing evaluation of properties price per unit area in Taiwan. 
+
+
+
+
+
+## Section 1:  Research Question and EDA
+
+
+```{r}
+# drop the columns we are not interested in
+df <- subset(df, select = -c(date, lat, lon))
+
+
+# display the head of the dataset
+# head(df)
+```
+
+
+The data set of our interest has `r nrow(df)` number of rows or observations and `r dim(df)[2]` columns. The number of rows corresponds to the market historical data set of real estate valuation collected from Sindian District, New Taipei City, Taiwan. The transactions are recorded during 2012 and 2013. Each observation or row is a unique transaction on a house during that period of time. Additionally, the data set is complete meanining it hasno missing data.
+
+For the research question, we are interested in predicting the house price of unit area given the house age, the number of convenience stores in the living circle on foot, and the distance to the nearest MRT station. Our independent variable is house price of unit area. The house price of a unit area is recorded  as per 10000 New Taiwan Dollar/Ping.  Ping Ping is a local unit and 1 Ping = 3.3$m^2$. On the other hand, the dependent variables house age, distance to the nearest MRT station and number of convenience stores in living circle on foot area measured by units of years, meter, and count(integer) respectively. 
+
+
+
+```{r}
+# create a data frame of mean, sd, min and max using apply function
+table1 <- data.frame(
+  Mean = apply(df[,-1], 2, mean),
+  SD = apply(df[,-1], 2, sd),
+  Min = apply(df[,-1], 2, min),
+  Max = apply(df[,-1], 2, max)
+)
+
+
+# rename the columns  to the order of the 
+colnames(table1) <- c("Mean", "SD", "Min", "Max")
+
+# rename the rows to the attributes 
+rownames(table1) <- c("The house age (unit: year)", "The distance to the nearest MRT station (unit: meter)", "The number of convenience stores in the living circle on foot (integer)", " House price of unit area (10000 New Taiwan Dollar/Ping)")
+
+table1 <- round(table1,2)
+
+knitr::kable(table1, caption = "Table 1:Summary Statistics for Data ")
+```
+
+
+
+
+
+
+As we can see from the above Table, in our data set the house age ranges from `r table1[1,3]` to `r table1[1,4]` with mean `r table1[1,1]` and standard deviation of `r table1[1,2]`. In our data set the distance to the nearest MRT station ranges from `r table1[2,3]` to `r table1[2,4]` with mean `r table1[2,1]` and standard deviation of `r table1[2,2]`. The number of convenience stores in the living circle on foot ranges from `r table1[3,3]` to `r table1[3,4]` with mean `r table1[3,1]` and standard deviation of `r table1[3,2]`. Moreover,house price of unit area (10000 New Taiwan Dollar/Ping) ranges from `r table1[4,3]` to `r table1[4,4]` with mean `r table1[4,1]` and standard deviation of `r table1[4,2]`.
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# columns names 
+# colnames(df)
+```
+```{r}
+
+# dimension of the data
+# dim(df)
+
+# number of unique houses
+ # length(unique(df$House_Number))
+```
+
+
+```{r}
+p1 <- ggplot(data = df, aes(x =age, y =Price)) +
+  geom_point() +
+  stat_smooth(method= "lm", formula = y~x) +
+  labs(x = "", y = " Price ", title = "Fig1a:Plot of house age vs price")
+```
+
+```{r}
+p2<- ggplot(data = df, aes(x=dMRT, y =Price)) +
+  geom_point() +
+  stat_smooth(method= "lm", formula = y~x) +
+  labs(x = "", y = " Price ", title = "Fig1c:Plot of d(MRT) vs price")
+```
+```{r}
+p3<- ggplot(data = df, aes(N_CStores, y =Price)) +
+  geom_point() +
+  stat_smooth(method= "lm", formula = y~x) +
+  labs(x = "", y = " Price ", title = "Fig1c:Plot of num stores vs price")
+```
+
+
+
+```{r}
+# Combine for analysis
+q1 <- ggarrange(p1, p2,p3, ncol = 2, nrow = 2,  common.legend = TRUE,legend="bottom") 
+
+annotate_figure(q1, top = text_grob("Figure 1: Graph to Check for Linear Assumptions", 
+               color = "red", face = "bold", size = 14))
+```
+
+
+As we can see from Figure 1, we can confirm that the normal regression assumptions are met. This is because each of the scatter plots of our dependent variables( house age in years, distance to the nearest MRT station in meters, number of convenience plots in living circle ) vs house price of a unit area are all linear. Hence, this confirms the assumption that the structure of the relation between our dependent and independent variables is linear to perform an Ordinary Least Squares(OLS) regression.  Additionally, structure of the data shows independence among each observation. That is, accounting for all our predictors(dependent variables) say $X$, the observed housing price price unit area $(Y_i)$ on case i is independent of any other case j. While, we have yet to check on the structure of variability assumption(observed values of Y will vary normally around their average and standard deviation) we can proceed to specifying our priors and building our bayesian regression model. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# summary(df)
+# sd(df$Price)
+```
+
+## Section 2: The Bayesian Model and Posterior convergence
+
+
+Once we have confirmed that we can use linear regression, the next step would be to specify our prior parameters. In the data model, we have four data variables, 1 response variable Y and 3 explanatory variables in X. As a result, we have seven unknown  regression parameters that encode the relationship between price of house per unit with our dependent variables. Since, there was limited reliable informative prior information on the prior distributions, I have resorted to weakly informative priors. Using weak informative prior assumptions, the Bayesian linear regression is given by:
+
+
+$\text{data: } Y_i | \beta_0^C, \beta_1^C, \beta_2^C, \beta_3^C  \stackrel{ind}{\sim} N(\mu_i,\sigma^2 )$ \\
+
+
+$\text{ with } \mu_i = \beta_0 + \beta_1^C*age_i + \beta_2^C*dMRT_i + \beta_3^C*NCStore_i$
+
+The priors:
+
+
+$\beta_0 \sim N(m_0, s_0^2) = N(37.98,13.60649^2 )$
+
+$\beta_1 \sim N(m_1, s_1^2) =  N(0, 0.2986^2)$
+
+$\beta_2 \sim N(m_1, s_1^2) =  N(0, 0.0.0027^2)$
+
+
+$\beta_3 \sim N(m_3, s_3^2) =  N(0, 1.1548^2)$
+
+
+$\sigma \sim Exp(l) = Exp(0.073)$
+
+
+
+
+```{r}
+# prior distribution mean
+Y_0 <- mean(df$Price)
+# Y_0
+
+# prior standard deviation
+Sigma_Y0 <- sd(df$Price)
+# Sigma_Y0
+
+
+```
+
+```{r, results = "hide"}
+df$age <- df$age - mean(df$age)
+df$dMRT <- df$dMRT - mean(df$dMRT)
+df$N_CStores <- df$N_CStores - mean(df$N_CStores)
+
+n_warmup <- 1000
+n_iterations <- 20000
+
+m1 = 0
+sigma1 = 0.25
+m2 = 0
+sigma2 = 0.25
+m3 = 0
+sigma3 = 0.25
+
+
+rent_model_prior <- stan_glm(
+  Price ~ age + dMRT + N_CStores ,
+  data = df, family = gaussian, 
+  prior_intercept = normal(Y_0, Sigma_Y0),
+  prior = normal(c(m1,m2,m3),c(sigma1, sigma2, sigma3), autoscale = TRUE), 
+  prior_aux = exponential(1, autoscale = TRUE),
+  chains = 4, warmup=n_warmup, iter = n_iterations, seed = 42)
+```
+
+
+Once we specified the structure of our data using the weakly informative priors, our next step is to simulate MCMC posterior post-burn in draws. For this paper, the burn-in sample was 1000 with 20000 iterations for each of the four chains. As a result, we have 19000 post-burn in samples for posterior inference from each chain for analysis or inference. 
+
+
+
+After tossing out the first 1000 iterations of Markov chain values from the burn-in phase, the stan_glm() simulation produces four parallel chains of length 20000 for each model parameter: ${\beta_0^{(1)}, \beta_0^{(2)}, \dots , \beta_0^{(20000)}}$, ${\beta_1^{(1)}, \beta_1^{(2)}, \dots , \beta_1^{(20000)}}$, ${\beta_2^{(1)}, \beta_2^{(2)}, \dots , \beta_2^{(20000)}}$ , ${\beta_3^{(1)}, \beta_3^{(2)}, \dots , \beta_3^{(20000)}}$ , and ${\sigma^{(1)}, \sigma^{(2)}, \dots , \sigma^{(20000)}}$  .These are stored as (Intercept), age , dMRT, N_CStores, and sigma respectively. The results are summarized in Table 2 below:
+
+
+```{r}
+table2a <- neff_ratio(rent_model_prior)
+table2b<- rhat(rent_model_prior)
+table2<-rbind(table2a,table2b)
+
+rownames(table2) <- c("Effective Sample Size", "Rhat")
+knitr::kable(table2, caption= "Table 2: Effective Sample Size Ratio and Rhat")
+
+
+```
+
+
+
+
+
+As we can see from Table 2, using diagnostics indicate that these chains are independent sample, stable, mixing quickly, and trustworthy. This follows from the observation that the effective sample size ratios are above 1 for house of age, and sigma, indicating the independence of out posterior post-burn in samples.However, he effective sample size of distance to the nearest MRT and number of stores in living circle are close to 0.8. This means that for every 10 post-burn in samples, we get 8 independent post-burn in samples. Hence, we would consider this sufficient as the number of independent post-burn in samples is very close to the post-burn samples. Additionally, $\hat{R}$  values are close to 1.This confirms that the posterior post-burn in draws for all four of our chains have converged and we can trust the results.Hence, we can confirm that by effective size ration our MCMC samples are efficient and converging by their respective $\hat{R}$ values.  
+
+
+
+
+
+
+
+
+An additional check we postponed was to check if our prior assumptions were reasonable. In order to do that we can perform a a posterior predictive check (PPC). A PPC means that we use our MCMC samples to simulate our response variable Y from the posterior predictive distribution.
+
+
+```{r}
+# prior_summary(rent_model_prior)
+```
+
+
+```{r}
+p1<- pp_check(rent_model_prior,nreps =100)
+
+# Combine for analysis
+q1 <- ggarrange(p1, ncol = 1, nrow = 1,  common.legend = TRUE,legend="bottom") 
+
+annotate_figure(q1, top = text_grob("Figure 2a: Posterior Predictive Check(PPC) for 100 simulations", 
+               color = "red", face = "bold", size = 14))
+```
+
+ 
+ 
+ 
+```{r}
+
+#  Trace plots of parallel chains
+p2<-mcmc_trace(rent_model_prior, size = 0.2)
+
+# Density plots of parallel chains
+p3<-mcmc_dens_overlay(rent_model_prior)
+
+# Combine for analysis
+q1 <- ggarrange(p2,p3, ncol = 1, nrow = 2,  common.legend = TRUE,legend="bottom") 
+
+annotate_figure(q1, top = text_grob("Figure 2b: Trace Plots and Density Plots for Parallel Chain(4)", 
+               color = "red", face = "bold", size = 14))
+```
+ 
+ As we can see from Figure 2a, after performing PPC for 100 simulations, we can conclude that the the assumptions we made while building the model match the actual data. That is our simulations of posterior prediction conditional on our MCMC draws of all parameters aligns with the weakly informative prior we specified for the data. This is to be expected as our prior assumptions are obtained from the data as a result of lack of prior information. We can reach at the sample conclusion from trace and density plots in Figure 2b as well. 
+ 
+ 
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r, results = "hide"}
+Y_0 <- mean(df$Price)
+Sigma_Y0 <- sd(df$Price)
+
+
+m1 = 0
+sigma1 = 0.25
+m2 = 0
+sigma2 = 0.25
+m3 = 0
+sigma3 = 0.25
+
+
+rent_model_prior2 <- stan_glm(
+  Price ~  dMRT + N_CStores ,
+  data = df, family = gaussian, 
+  prior_intercept = normal(Y_0, Sigma_Y0),
+  prior = normal(c(m1,m2),c(sigma1, sigma2), autoscale = TRUE), 
+  prior_aux = exponential(1, autoscale = TRUE),
+  chains = 4, warmup=10000, iter = 10000*2, seed = 42)
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+# pp_check(rent_model_prior2,nreps =100)
+```
+
+
+
+
+
+
+## Section 3: Posterior Inference
+
+So far we have assess convergence and the necessary MCMC checks to check if prior assumptions were reasonable. Since we have confirmed convergence and sensibility of our prior specification, we can continue to make posterior inference.Hence, in this section, we will  Construct and interpret 95% HPD intervals (or 95% posterior credible intervals) for all model parameters. 
+
+```{r}
+t3<- tidy(rent_model_prior, effects = c("fixed", "aux"),
+     conf.int = TRUE, conf.level = .95)
+colnames(t3) <- c("Term", "Estimate", "Standard Error", "Lower Credible Interval", "Upper Credible Interval")
+knitr::kable(t3, caption= "Table 3: Model Parameters and 95% HPD Intervals")
+```
+
+```{r}
+
+```
+
+
+Table 3 summarizes the model estimates and we can conclude that on an average house with average age, average distance to MRT and average number of stores in the near circle, house prices are typically around `r signif(t3[1,2],3)`, though this average could be somewhere between `r signif(t3[1,2],3)-2*signif(t3[1,3],3)` and `r signif(t3[1,2],3)+2*signif(t3[1,3],3)`. Additionally, For every 1 year increase in  house of age, house price per unit area typically decreases by `r -1*signif(t3[2,2],3)` thousands of Taiwan dollar per ping, all else equal. However, this this average reduction in the price of the house per unit area could be as low as `r -1*(signif(t3[2,2],3)-2*signif(t3[2,3],3))` or as high as `r -1*(signif(t3[2,2],3)+2*signif(t3[2,3],3))` thousands of Taiwan dollar per ping. Additionally, for every 1 meter increase in the distance to the nearest MRT station, house price per unit area typically decreases by `r -1*(signif(t3[3,2],3))` thousands of Taiwan dollar per ping, all else equal.However, this this average reduction in the price of the house per unit area could be as low as `r -1*(signif(t3[3,2],3)-2*signif(t3[3,3],3))` or as high as `r -1*(signif(t3[3,2],3)+2*signif(t3[3,3],3))` thousands of Taiwan dollar per ping. Moreover, for every 1 additional increase in the number of convenience stores in the living circle on foot, house price per unit area typically increases by `r signif(t3[4,2],3)` thousands of Taiwan dollar per ping, all else equal.However, this this average increase in the price of the house per unit area could be as low as `r signif(t3[4,2],3)-2*signif(t3[4,3],3)` or as high as `r signif(t3[4,2],3)+2*signif(t3[4,3],3)` thousands of Taiwan dollar per ping.
+
+
+
+So far, we have explained what the estimates tell us. The next step would be to perform 1-sided Bayesian hypothesis test. We are interested in testing if each of our parameters $\beta_1^C , \beta_2^C , \beta_3^C$ are greater than 0. The reason for choosing if each of the estimate is greater than 0 to is to allow owners to see which of the estimates lead to statistcally significant appreciation of the properties in price per unit area.  The table below summarizes the posterior probability that each of our estimates are greater than 0. 
+
+```{r}
+df_m <- data.frame(rent_model_prior)
+df_m <- df_m[,-1]
+df_m <- df_m[,-4]
+# df_m
+```
+
+```{r}
+t4<- data.frame((colSums(df_m > 0)/nrow(df_m))*100)
+colnames(t4) <- c("Probability(out of 100)")
+rownames(t4) <- c("The house age (unit: year)", "The distance to the nearest MRT station (unit: meter)", "The number of convenience stores in the living circle on foot (integer)")
+knitr::kable(t4, caption= "Table 4: Hypothesis Test(1-sided) and  are each Estimates > 0? ")
+```
+
+As we can see from Table 4, the only way to increase price of house per unit area(in thousands of Taiwan dollar per ping) is by increasing the number of  convenience stores in the living circle on foot. There is 100% posterior probability that the house per unit area of a house increases by increasing the the number of convenience stores in the living circle.The additional increase in age of a house and its distance to the nearest MRT station don't lead to an appreciation on the value of a house in Taiwan per unit area. 
+
+Now we understand that increasing the number of  convenience stores in the living circle on foot appreciates the value of a house. We are now interested in the practically significant relationships between the response variable and the explanatory variables. By assuming that inflation in Taiwan is close to 3%, which is standard rate for most middle-income countries. Since we are interested in the increase in the price of house per unit area and the average house per unit area is 37.98 thousands Taiwan dollar per ping.  Therefore, one would consider an increase in in the price of house per unit area 0.03(37.98)= `r 0.03*37.98` to be practically significant. 
+
+
+
+
+
+```{r}
+df_m <- data.frame(rent_model_prior)
+df_m <- df_m[,-1]
+df_m <- df_m[,-4]
+
+```
+
+```{r}
+t5 <- data.frame((colSums(df_m > 1.1394)/nrow(df_m)*100))
+
+colnames(t5) <- c("Probability(out of 100)")
+rownames(t5) <- c("The house age (unit: year)", "The distance to the nearest MRT station (unit: meter)", "The number of convenience stores in the living circle on foot (integer)")
+knitr::kable(t5, caption= "Table 5: Practical Hypothesis Test(1-sided) and  are each Estimates > 1.1394? ")
+
+```
+
+
+
+As we can see from Table 5 above, there is `r signif(t5[3,1],2)`% posterior probability that $\beta_3^c > 1.1394$. This is practically significant result as significant majority of our $\beta_3^c$ estimates are bigger than one would consider an increase in in the price of house per unit area which is 1.1394 to be practically significant.  As a result, the best strategy for any new home buyer is to find properties where there is investment plans to increase the number of convenience stores in the living circle on foot.
+
+
+
+## Section 4: Prediction
+
+
+So far, we have discussed about our posterior inference. In this section, we will use our model to make a prediction for one new observation and make a prediction interval for that observation. Additionally, we will assess the accuracy of our prediction using 10-fold cross validation(CV). 
+
+Assume that we have a new observation with the following the house age(in years), The distance to the nearest MRT station(in meters) and The number of convenience stores in the living circle on foot  is given by 10, 1200 and 6 respectively. 
+
+
+
+
+```{r}
+df_rent_model_prior <- as.data.frame(rent_model_prior)
+# df_rent_model_prior 
+```
+
+```{r}
+# center and standardize 70
+X_starage <- (10-mean(df$age))
+X_stardMRT <- (1200 - mean(df$dMRT))
+X_stardMRT <- (6 - mean(df$N_CStores))
+
+
+# this will store the first_it, second_it etc MCMC iterations and predict Y^* values
+q21_Yhat <- c()
+for (i in 1:nrow(df_rent_model_prior)) {
+  # we want to repeat what we did for question 19
+  # set seed
+  set.seed(365)
+  #simulate values for Y^* for all post-burn in MCMC iterations
+  q21_Yhat[i] <- rnorm(1, df_rent_model_prior[i,1] + df_rent_model_prior[i,2]*X_starage, df_rent_model_prior[i,3]*X_stardMRT+ df_rent_model_prior[i,4]*X_stardMRT)
+}
+```
+
+
+
+```{r}
+PCI <- HDInterval::hdi(q21_Yhat, credMass = .95)
+
+df_PCI <- data.frame(t(PCI))
+
+#df_PCI
+# df_PCI[1,2]
+```
+After scaling each of our continuous explanatory variables and plugging them back in to our model, we can conclude that there is 95% posterior predictive probability that the house price of unit area (10000 New Taiwan Dollar/Ping) is between `r signif(df_PCI[1,1],2)` and  `r signif(df_PCI[1,2],2)`. Since we made up the observation above we won't be able to assess predictive accuracy. However, we can assess predictive accuracy of our model on our whole training data set and using 10-fold cross validation.
+
+
+```{r}
+# plot the posterior distributions
+p1<- ggplot(data = data.frame(q21_Yhat), aes(x = q21_Yhat)) +
+  geom_density(fill='violet') +
+  labs(title = "Figure 3: Y^* density plot", x = "Y^* value", y = "Density")
+```
+
+
+
+```{r}
+# code adopted from https://stackoverflow.com/questions/65694397/add-main-title-multiple-plots-ggarange
+
+
+# Combine th eplots and display them
+q21 <- ggarrange(p1, ncol = 1, nrow = 1,  common.legend = TRUE,legend="bottom") 
+
+annotate_figure(q21, top = text_grob(" Posterior Draws Distribution Density Plot", 
+               color = "red", face = "bold", size = 14))
+```
+
+
+
+To examine the overall model predictive accuracy of our model we will use the predictive summary of our model.  Let’s examine the posterior predictive summaries for our data:
+
+
+
+```{r}
+# Posterior predictive summaries
+set.seed(84735)
+t6<- prediction_summary(rent_model_prior, data = df)
+
+
+# Among all 500 days in the dataset, we see that the observed ridership is typically 990 rides, or 0.77 standard deviations, from the respective posterior predictive mean. Further, only 43.8% of test observations fall within their respective 50% prediction interval whereas 96.8% fall within their 95% prediction interval. 
+
+```
+
+```{r}
+# t6[1,2]
+```
+
+
+
+As we can see from table 6, Among all `r nrow(df)` number of properties in the data set, we see that the observed price per unit area of a house is typically `r signif(t6[1,1],2)` or `r signif(t6[1,2],2)` standard deviations, from the respective posterior predictive mean. As we can see, our model is doing quite well, as it is able to predict House price of unit area (10000 New Taiwan Dollar/Ping) with in `r signif(t6[1,1],2)`. Given the magnitude of house price of a unit area, this prediction is doing well. Furthermore, `r signif(t6[1,3],2)*100`%  of test observations fall within their respective 50% prediction interval whereas  `r signif(t6[1,4],2)*100`% fall within their 95% prediction interval. As we can see, this model is doing quite well both interms of accuracy of the result, and the distributions being within their predictive interval. 
+
+Once concern that comes up when evaluating a model on the training data set is over-fitting. To check that our model is not overfitting to the training data, we can perform 10-fold cross validation to confirm if the results from 10-fold CV align with the models from our overall model on the training set.  
+
+
+
+
+```{r}
+knitr::kable(t6, caption= "Table 6: Overall Model Performance ")
+```
+
+
+```{r}
+set.seed(84735)
+ cv_procedure <- prediction_summary_cv(model = rent_model_prior, data = df, k = 10)
+```
+
+
+
+```{r}
+
+# below are the resulting posterior prediction metrics corresponding to each of the 10 testing folds in this cross-validation procedure. Since the splits are random, the training models perform better on some test sets than on others, essentially depending on how similar the testing data is to the training data. For example, the mae was as low as 786.8 rides for one fold and as high as 1270.9 for another:
+t7<- cv_procedure$folds
+
+```
+```{r}
+knitr::kable(t7, caption= "Table 7: Model Performance Using 10-fold CV")
+```
+
+
+```{r}
+# Averaging across each set of 10 mae, mae_scaled, within_50, and within_95 values produces the ultimate cross-validation estimates of posterior predictive accuracy:
+t8 <- cv_procedure$cv
+
+```
+
+
+```{r}
+
+```
+
+
+
+
+As we can see from table 7 , our model performs very similarly to the whole model fit to the training data set. Table 7 displays, each of the posterior prediction metrics corresponding to each of the folds which were created randomly. Since the splits are performed equally and at random , the training models performance varies. This stems from the nature of the test set and how close it is to the training data set. Nonetheless, our mae for each of the folds was as low as `r signif(min(t7[,2]),2)` and as high as `r signif(max(t7[,2]),2)`. All these values in very small proximity to the overall model performance. 
+
+
+From table 8, we can conclude that the predictive accuracy our model is good as well using 10-fold CV estimates. As we can see from table 8, Among all `r nrow(df)`number of properties in the data set, we see that the observed price per unit area of a house is typically `r signif(t8[1,1],2)` or `r signif(t8[1,2],2)` standard deviations, from the respective posterior predictive mean. As we can see, our model using 10-fold CV is doing quite well, as it is able to predict House price of unit area (10000 New Taiwan Dollar/Ping) with in `r signif(t8[1,1],2)`. Given the magnitude of house price of a unit area, this prediction is doing well. Furthermore, `r signif(t8[1,3],2)*100`%  of test observations fall within their respective 50% prediction interval whereas  `r signif(t8[1,4],2)*100`% fall within their 95% prediction interval. As we can see, this model is doing quite well both in-terms of accuracy of the result, and the distributions being within their predictive interval. 
+
+
+
+```{r}
+# predict average values  for the prices
+y_hat <- mean(df$Price)
+
+# find MAE
+n <- nrow(df)
+mae_b <- (1/n) * sum(abs(df$Price - y_hat))
+# mae_b
+```
+
+
+
+```{r}
+# ((mae_b - t8[1,1])/t8[1,1])*100
+```
+
+
+## Section 5 : Results and Conclusion
+```{r}
+knitr::kable(t8, caption= "Table 8: Ultimate 10-fold CV estimates of posterior predictive accuracy Model")
+```
+
+
+From table 8, we can conclude that the predictive accuracy our model is good as well using 10-fold CV estimates. As we can see from table 8, Among all `r nrow(df)`number of properties in the data set, we see that the observed price per unit area of a house is typically `r signif(t8[1,1],2)` or `r signif(t8[1,2],2)` standard deviations, from the respective posterior predictive mean. As we can see, our model using 10-fold CV is doing quite well, as it is able to predict House price of unit area (10000 New Taiwan Dollar/Ping) with in `r signif(t8[1,1],2)`. Given the magnitude of house price of a unit area, this prediction is doing well. Furthermore, `r signif(t8[1,3],2)*100`%  of test observations fall within their respective 50% prediction interval whereas  `r signif(t8[1,4],2)*100`% fall within their 95% prediction interval. As we can see, this model is doing quite well both in-terms of accuracy of the result, and the distributions being within their predictive interval. 
+
+We can also conclude that the best way to appreciate the value of the house per unit area in Taiwan is to increase the number of convenience stores in the living circle on foot. Additionally, for every 1 meter increase in the distance to the nearest MRT station, house price per unit area typically decreases by 0.00528 thousands of Taiwan dollar per ping, all else equal. For every 1 year increase in house of age, house price per unit area typically decreases by 0.249 thousands of Taiwan dollar per ping, all else equal. for every 1 additional increase in the number of convenience stores in the living circle on foot, house price per unit area typically increases by 1.298 thousands of Taiwan dollar per ping, all else equal.
+
+Overall, our Bayesian linear regression model performed well and will be able to provide good insight into valuation of properties in Taiwan given the predictive features provided.Additionally when the Bayesian linear regression model is compared to a baseline model, it performs quite well . A baseline model is a model which predicts price of new rentals as the average price of rentals from the training set. We will find that the baseline model mae is `r mae_b` where as the ultimate 10-fold Bayesian linear regression model estimates mae is `r t8[1,1]`.  This is a `r round(((mae_b - t8[1,1])/t8[1,1])*100)`% increase in mae which is achieved by using Bayesian linear regression. Therefore,we can conclude our model did quite well. 
+
+
+
+
+
+
+**Data Sources**
+                          
+  -Yeh, I. C., & Hsu, T. K. (2018). Building real estate valuation models with comparative approach through case-based reasoning. Applied Soft Computing, 65, 260-271.
+  
+  - UCI Machine Learning Repository: Real Estate valuation data set data set. (n.d.). Retrieved May 4, 2023, from https://archive.ics.uci.edu/ml/datasets/Real+estate+valuation+data+set 
+
+
+
+
+
