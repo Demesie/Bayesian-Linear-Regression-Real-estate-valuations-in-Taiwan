@@ -6,7 +6,7 @@ This is a project(in progress)
 $\text{data: }$ $Y_i | \beta_0^C, \beta_1^C, \beta_2^C, \beta_3^C$  $\stackrel{ind}{\sim} N(\mu_i,\sigma^2 )$ \\
 
 
-$\text{ with }$ $\mu_i = \beta_0 + \beta_1^C*age_i + \beta_2^C*dMRT_i + \beta_3^C*NCStore_i$
+$\text{ with }$ $\mu_i = \beta_0 + \beta_1^C*age_i + \beta_2^C*dMRT_i +$ $\beta_3^C*NCStore_i$
 
 The priors:
 
